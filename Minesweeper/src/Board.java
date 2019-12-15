@@ -3,6 +3,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.LinkedList;
+import java.util.Stack;
 import java.util.Random;
 import javax.swing.ImageIcon;
 
@@ -15,6 +16,8 @@ public class Board extends JPanel {
     private int HEIGHT;
 
     public Cell[][] board;
+    public LinkedList<Cell> COVERED_CELLS;
+    public LinkedList<Cell> FRINGE;
     private int minesLeft;
     private Image[] img;
 
@@ -23,6 +26,7 @@ public class Board extends JPanel {
     public int ROWS;
     public int COLUMNS;
     public int N_MINES;
+    public int N_CELLS;
     public boolean inGame;
 
     // A Board is comprised of a status, rows, columns, and number of mines
@@ -32,9 +36,12 @@ public class Board extends JPanel {
         this.ROWS = ROWS;
         this.COLUMNS = COLUMNS;
         this.N_MINES = N_MINES;
+        this.N_CELLS = ROWS * COLUMNS;
         this.WIDTH = COLUMNS * CELL_SIZE + 1;
         this.HEIGHT = ROWS * CELL_SIZE + 1;
         this.board = new Cell[ROWS][COLUMNS];
+        this.COVERED_CELLS = new LinkedList<Cell>();
+        this.FRINGE = new LinkedList<Cell>();
         init();
     }
 
@@ -66,8 +73,10 @@ public class Board extends JPanel {
         //Initially Covered board with no number of mines, and all unflagged
         for(int i = 0; i < this.ROWS; i++) {
             for(int j = 0; j < this.COLUMNS; j++) {
-                Cell c = new Cell(i, j, 0, true, false, false);
+                int P = N_MINES / N_CELLS;      //equal probability for each cell
+                Cell c = new Cell(i, j, 0, P,true, false, false);
                 this.board[i][j] = c;
+                COVERED_CELLS.add(c);
             }
         }
         //Add mines to the board
@@ -104,7 +113,7 @@ public class Board extends JPanel {
     // Input: Cell
     // Create a list of neighbors for a given cell
     // Output: LinkedList<Cell>
-    private LinkedList<Cell> getNeighbors(Cell cell) {
+    public LinkedList<Cell> getNeighbors(Cell cell) {
         LinkedList<Cell> neighbors = new LinkedList<Cell>();
         if(cell.X - 1 >= 0) {
             //Top center
@@ -154,22 +163,75 @@ public class Board extends JPanel {
         return count;
     }
 
+    //  Push the least likely probability neighbor to the front
+    /*
+    public void updateFringe(LinkedList<Cell> neighbors) {
+        for(Cell neighbor : neighbors) {
+            if(neighbor.COVERED) {
+                if(FRINGE.empty()) {
+                    FRINGE.push(neighbor);
+                } else if (neighbor.PROB < FRINGE.peek().PROB) {
+                    FRINGE.push(neighbor);
+                } else {
+                    FRINGE.add(-1, neighbor);
+                }
+            }
+        }
+    }
+     */
+
+    // LinkedList<Cell> neighbors
+    // Count the covered cell for a given cells neighborhood
+    // return Integer
+    // Helper function called by updateProbNeighbors
+    public int countCoveredNeighbors(LinkedList<Cell> neighbors) {
+        int count = 0;
+        for(int i = 0; i < neighbors.size(); i++) {
+            if(neighbors.get(i).COVERED) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    //Update the probability of all the covered neighbors
+    public void updateProbNeighbors(Cell cell) {
+        LinkedList<Cell> neighborhood = getNeighbors(cell);
+        int covered = countCoveredNeighbors(neighborhood);
+        for(Cell neighbor : neighborhood) {
+            if(neighbor.COVERED) {
+                neighbor.updateProb(cell.N, covered);
+                if(FRINGE.size() == 0) {
+                    FRINGE.push(neighbor);
+                } else if (neighbor.PROB < FRINGE.peek().PROB) {
+                    FRINGE.push(neighbor);
+                } else {
+                    FRINGE.offer(neighbor);
+                }
+            }
+        }
+    }
+
     // Cell cell
     // Reveals each neighboring cell for a given empty cell
     // Recursively calls on each empty cell
     // return void
     private void extendZero(Cell cell) {
         LinkedList<Cell> neighbors = getNeighbors(cell);
-        for(int i = 0; i < neighbors.size(); i++) {
-            Cell neighbor = neighbors.get(i);
+        for(Cell neighbor : neighbors) {
             if(!neighbor.MINE) {
                 if(neighbor.COVERED) {
                     if (neighbor.N == 0) {
                         board[neighbor.X][neighbor.Y].COVERED = false;
+                        repaint();
+                        //COVERED_CELLS.remove(board[neighbor.X][neighbor.Y]);
                         extendZero(neighbor);
                     } else if (neighbor.N > 0) {
+                        updateProbNeighbors(board[neighbor.X][neighbor.Y]);
+                        //updateFringe(getNeighbors(board[neighbor.X][neighbor.Y]));
                         board[neighbor.X][neighbor.Y].COVERED = false;
-
+                        repaint();
+                        //COVERED_CELLS.remove(board[neighbor.X][neighbor.Y]);
                     }
                 }
             }
@@ -261,47 +323,52 @@ public class Board extends JPanel {
             if((x < COLUMNS * CELL_SIZE) && (y < ROWS * CELL_SIZE)) {
                 int col = x / CELL_SIZE;
                 int row = y / CELL_SIZE;
+                Cell clicked = board[row][col];
                 if (e.getButton() == MouseEvent.BUTTON3) {  //If right clicked
-                    if (!board[row][col].MINE) {
-                        REPAINT = true;
-                        if (board[row][col].COVERED) {
-                            if (minesLeft > 0) {
-                                board[row][col].FLAGGED = true;
-                                minesLeft--;
-                                String msg = Integer.toString(minesLeft);
-                                STATUS.setText(msg);
-                            } else {
-                                STATUS.setText("No flags left!");
-                            }
-                        } else {
-                            board[row][col].FLAGGED = false;
-                            minesLeft++;
+                    if(!clicked.COVERED) {
+                        return;
+                    }
+                    if (clicked.COVERED && !clicked.FLAGGED) {
+                        if (minesLeft > 0) {
+                            clicked.FLAGGED = true;
+                            minesLeft--;
                             String msg = Integer.toString(minesLeft);
                             STATUS.setText(msg);
+                            REPAINT = true;
+                        } else {
+                            STATUS.setText("No flags left!");
+
                         }
+                    } else if(clicked.FLAGGED){
+                        clicked.FLAGGED = false;
+                        minesLeft++;
+                        String msg = Integer.toString(minesLeft);
+                        STATUS.setText(msg);
+                        REPAINT = true;
                     }
                 }
                 if(e.getButton() == MouseEvent.BUTTON1) {       //If clicked
-                    if (!board[row][col].COVERED) {
+                    if (!clicked.COVERED) {
                         return;
                     }
-                    if(board[row][col].COVERED) {
-                        if(board[row][col].MINE) {
-                            if(board[row][col].FLAGGED) {
-                                board[row][col].FLAGGED = false;
-                                REPAINT = true;
-                            } else {
-                                board[row][col].COVERED = false;
+                    if(clicked.COVERED) {
+                        if(clicked.FLAGGED) {
+                            clicked.FLAGGED = false;      //Clicked flag
+                            REPAINT = true;
+                        }
+                        if(clicked.MINE) {
+                                clicked.COVERED = false;      //Clicked mine
                                 repaint();
                                 inGame = false;
-                            }
                         }
-                        if (board[row][col].N > 0) {
-                            board[row][col].COVERED = false;
-                            REPAINT = true;
-                        } else if (board[row][col].N == 0) {
-                            board[row][col].COVERED = false;
-                            extendZero(board[row][col]);
+                        if (clicked.N > 0) {
+                            //updateProbNeighbors(clicked);           //Update the probability of the neighbors and push to fringe
+                            //updateFringe(getNeighbors(clicked));    //Push them into the fringe
+                            clicked.COVERED = false;          //Clicked non-zero Cell
+                            repaint();
+                        } else if (clicked.N == 0) {
+                            clicked.COVERED = false;          //Clicked zero cell
+                            extendZero(clicked);
                             REPAINT = true;
                         }
                     }

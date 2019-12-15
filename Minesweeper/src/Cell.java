@@ -5,14 +5,20 @@
 public class Cell {
     public int X, Y;
     public int N;
+    public int PROB;
     public boolean COVERED, FLAGGED, MINE;
 
-    public Cell(int X, int Y, int N, boolean COVERED, boolean FLAGGED, boolean MINE) {
+    public Cell(int X, int Y, int N, int PROB, boolean COVERED, boolean FLAGGED, boolean MINE) {
         this.X = X;
         this.Y = Y;
         this.N = N;
+        this.PROB = PROB;
         this.COVERED = COVERED;
         this.FLAGGED = FLAGGED;
         this.MINE = MINE;
+    }
+
+    public void updateProb(int N_MINES, int N_SIZE) {
+        this.PROB = N_MINES / N_SIZE;
     }
 }
